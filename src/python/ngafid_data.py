@@ -18,9 +18,7 @@ def parse_csvs(root_dir):
 def parse_file(root_dir, file, labels, data):
     kvp = parse_file_label(file)
     labels.append(kvp)
-    print(kvp.items())
     [(k, v)] = kvp.items()
-    print(k)
     data.append({k : parse_file_data(root_dir, file)})
 
 def parse_file_label(file):

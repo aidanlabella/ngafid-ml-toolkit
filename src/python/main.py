@@ -20,6 +20,11 @@ from torch.nn import functional as F
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import TensorDataset, DataLoader
 
+# Local Functions
+from ngafid_data import parse_csvs
+from ngafid_data import training_data, testing_data
+from ngafid_data import training_data_labels, testing_data_labels
+
 
 seed = 1
 np.random.seed(seed)
@@ -31,6 +36,7 @@ enc = joblib.load(ROOT/'encoder.model')
 raw_arr = np.load(ROOT/'feat.npy').transpose(0, 2, 1)
 fft_arr = np.load(ROOT/'feat_fft.npy').transpose(0, 2, 1)
 target = np.load(ROOT/'target.npy')
+
 
 print(dedent(f'''
 Dataset shapes:
@@ -161,6 +167,8 @@ class Classifier(nn.Module):
 
 trn_sz = 3810  # only the first `trn_sz` rows in each array include labelled data
 
+parse_csvs(ngafid_events)
+exit(0)
 datasets = create_datasets((raw_arr, fft_arr), target, trn_sz, seed=seed)
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
