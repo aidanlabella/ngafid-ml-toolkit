@@ -132,7 +132,6 @@ class Flatten(nn.Module):
             return x.view(x.size(0), -1)
         return x.view(-1)
 
-# Neural Arch is specified here
 class Classifier(nn.Module):
     def __init__(self, raw_ni, fft_ni, no, drop=.5):
         super().__init__()
