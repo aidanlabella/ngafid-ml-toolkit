@@ -3,7 +3,6 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from ngafid_data import parse_csvs, training_data, training_data_labels, testing_data, testing_data_labels
 
 class Conv1dSamePadding(nn.Conv1d):
     """Represents the "Same" padding functionality from Tensorflow.
@@ -29,7 +28,6 @@ def conv1d_same_padding(input, weight, bias, stride, dilation, groups):
 
 
 class ConvBlock(nn.Module):
-
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int,
                  stride: int) -> None:
         super().__init__()
@@ -44,11 +42,10 @@ class ConvBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore
-
         return self.layers(x)
 
 class ResNet(nn.Module):
-    def __init__(self, in_channels, mid_channels: int = 64, n_classes):
+    def __init__(self, in_channels, mid_channels, n_classes):
         super().__init__()
         self.input_args = {
            'in_channels': in_channels,
@@ -62,43 +59,34 @@ class ResNet(nn.Module):
 
         ])
 
-        self.final = nn.Linear(mid_channels * 2, num_pred_classes)
+        self.final = nn.Linear(mid_channels * 2, n_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore
         x = self.layers(x)
         return self.final(x.mean(dim=-1))
 
 class ResNetBlock(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int) -> None:
+        super().__init__()
 
-def __init__(self, in_channels: int, out_channels: int) -> None:
-    super().__init__()
+        channels = [in_channels, out_channels, out_channels, out_channels]
+        kernel_sizes = [8, 5, 3]
 
-    channels = [in_channels, out_channels, out_channels, out_channels]
-    kernel_sizes = [8, 5, 3]
-
-    self.layers = nn.Sequential(*[
-        ConvBlock(in_channels=channels[i], out_channels=channels[i + 1],
-                  kernel_size=kernel_sizes[i], stride=1) for i in range(len(kernel_sizes))
-    ])
-
-    self.match_channels = False
-    if in_channels != out_channels:
-        self.match_channels = True
-        self.residual = nn.Sequential(*[
-            Conv1dSamePadding(in_channels=in_channels, out_channels=out_channels,
-                              kernel_size=1, stride=1),
-            nn.BatchNorm1d(num_features=out_channels)
+        self.layers = nn.Sequential(*[
+            ConvBlock(in_channels=channels[i], out_channels=channels[i + 1],
+                      kernel_size=kernel_sizes[i], stride=1) for i in range(len(kernel_sizes))
         ])
 
-def forward(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore
+        self.match_channels = False
+        if in_channels != out_channels:
+            self.match_channels = True
+            self.residual = nn.Sequential(*[
+                Conv1dSamePadding(in_channels=in_channels, out_channels=out_channels,
+                                  kernel_size=1, stride=1),
+                nn.BatchNorm1d(num_features=out_channels)
+            ])
 
-    if self.match_channels:
-        return self.layers(x) + self.residual(x)
-    return self.layers(x)
-
-parse_csvs('/mnt/ngafid/extracted_loci_events/sept_2022')
-model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=False)
-
-print(training_data)
-
-
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore
+        if self.match_channels:
+            return self.layers(x) + self.residual(x)
+        return self.layers(x)
