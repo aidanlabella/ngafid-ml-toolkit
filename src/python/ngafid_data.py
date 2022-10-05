@@ -2,7 +2,10 @@
 
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
+
+from numpy.linalg.linalg import double
 from torch.utils.data import DataLoader, TensorDataset
+import torch.nn.functional as F
 from resnet import ResNet
 import torch
 import numpy as np
@@ -11,22 +14,23 @@ import os
 training_data_labels = {}
 testing_data_labels = {}
 
-training_data = np.array
-testing_data = np.array
-
-def parse_csvs(root_dir):
+def get_files(root_dir):
+    files = []
     for file in os.listdir(root_dir):
         if 'csv' in file:
-            if 'test' in file:
-                parse_file(root_dir, file, testing_data_labels, testing_data)
-            elif 'train' in file:
-                parse_file(root_dir, file, training_data_labels, training_data)
+            files.append(parse_file_data(root_dir, file))
 
-def parse_file(root_dir, file, labels, data):
+    return files
+
+def get_labels():
+    return []
+
+def parse_file(root_dir, file, labels):
     kvp = parse_file_label(file)
     labels[kvp[0]] = kvp[1]
-    data = np.append(data, parse_file_data(root_dir, file))
-    print(data)
+    ndata = parse_file_data(root_dir, file)
+
+    np.append(data, ndata)
 
 def parse_file_label(file):
     fns = file.split('.')
@@ -34,48 +38,89 @@ def parse_file_label(file):
 
 def parse_file_data(root_dir, file):
     csv_buffer = open(root_dir + '/' + file)
-    return np.array(np.loadtxt(csv_buffer, delimiter=","))
+    return np.array(np.loadtxt(csv_buffer, delimiter=",", dtype="double"))
 
-def load_data(path):
-    parse_csvs(path);
-    train_inputs = []
-    test_inputs = []
+def get_default_device():
+    #Pick GPU if available, else CPU
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    else:
+        return torch.device('cpu')
 
+def create_classifier():
     input_channels = 8
     mid_channels = 4
-
     n_classes = 3;
 
-    train_input_labels = []
-    print('shape')
-    print(training_data)
-
-    # training_data_arr = list(training_data.values())
-    # for d2arr in training_data_arr:
-        # train_inputs.append(torch.Tensor(d2arr))
-
-    # testing_data_arr = list(testing_data.values())
-    # for d2arr in testing_data_arr:
-        # test_inputs.append(torch.Tensor(d2arr))
-        # demo_tensor = torch.Tensor(d2arr)
-    
     resnet = ResNet(in_channels=input_channels, mid_channels=mid_channels, n_classes=n_classes)
-    print(train_inputs)
-    print(test_inputs)
-    print("done!")
-
-    print(len(training_data[0][0]))
-    # x_in = torch.cat(training_data, dim=1)
-
-    x_in = torch.Tensor(training_data)
-    print(x_in)
-    x = resnet.forward(train_inputs)
-    print(x)
 
     return resnet
 
+def train():
+    class TSClassificationBase(nn.Module):
+        def training_step(self, batch):
+            images, labels = batch
+            out = self(images)                  # Generate predictions
+            loss = F.cross_entropy(out, labels) # Calculate loss
+            return loss
+
+        def validation_step(self, batch):
+            images, labels = batch
+            out = self(images)                    # Generate predictions
+            loss = F.cross_entropy(out, labels)   # Calculate loss
+            acc = accuracy(out, labels)           # Calculate accuracy
+            return {'val_loss': loss.detach(), 'val_acc': acc}
+
+        def validation_epoch_end(self, outputs):
+            batch_losses = [x['val_loss'] for x in outputs]
+            epoch_loss = torch.stack(batch_losses).mean()   # Combine losses
+            batch_accs = [x['val_acc'] for x in outputs]
+            epoch_acc = torch.stack(batch_accs).mean()      # Combine accuracies
+            return {'val_loss': epoch_loss.item(), 'val_acc': epoch_acc.item()}
+
+        def epoch_end(self, epoch, result):
+            print("Epoch [{}], val_loss: {:.4f}, val_acc: {:.4f}".format(epoch, result['val_loss'], result['val_acc']))
+
+        def evaluate(model, val_loader):
+            outputs = [model.validation_step(batch) for batch in val_loader]
+            return model.validation_epoch_end(outputs)
+
+        def fit(epochs, lr, model, train_loader, val_loader, opt_func=torch.optim.SGD):
+            history = []
+            optimizer = opt_func(model.parameters(), lr)
+            for epoch in range(epochs):
+                # Training Phase
+                for batch in train_loader:
+                    loss = model.training_step(batch)
+                    loss.backward()
+                    optimizer.step()
+                    optimizer.zero_grad()
+                # Validation phase
+                result = evaluate(model, val_loader)
+                model.epoch_end(epoch, result)
+                history.append(result)
+            return history
+
+    input_size = 3*32*32
+    output_size = 10
+
 def main():
-    classifier = load_data('/mnt/ngafid/extracted_loci_events/sept_2022')
+    path = '/mnt/ngafid/extracted_loci_events/sept_2022'
+    classifier = create_classifier()
+
+    csv_files = get_files(path)
+
+    for data in csv_files:
+        data = np.reshape(data, (1, 8, 64))
+        print(data.shape)
+
+        x_in = torch.from_numpy(data).float()
+        
+        # TODO: need to create TorchDataset with the labels
+        print(classifier.forward(x_in))
+
+        classifier.forward(x_in)
+
 
 if __name__ == "__main__":
     main()
